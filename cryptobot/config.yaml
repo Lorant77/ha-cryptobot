@@ -1,0 +1,63 @@
+name: "Crypto Bot (Bitvavo)"
+version: "0.1.0"
+slug: "cryptobot"
+description: "Saját kereskedő bot Bitvavóra: Top 10 index + Top 3 Protect + Meme Protect"
+arch:
+  - aarch64
+  - amd64
+startup: application
+boot: auto
+init: false
+homeassistant_api: true
+map:
+  - type: share
+    read_only: false
+options:
+  api_key: ""
+  api_secret: ""
+  operator_id: 1001
+  dry_run: true
+  run_on_start: true
+  run_time_utc: "00:10"
+  allocation_index: 52
+  allocation_top3: 28
+  allocation_meme: 21
+  index_size: 10
+  index_max_weight_pct: 30
+  top3_sma_days: 50
+  meme_sma_days: 50
+  meme_count: 5
+  hysteresis_pct: 2.0
+  exclude_coins: []
+  min_trade_eur: 10.0
+  max_turnover_pct: 60
+  notify_service: ""
+  signal_url: ""
+  coingecko_api_key: ""
+  run_backtest_on_start: false
+  backtest_start: "2022-01-01"
+schema:
+  api_key: "password?"
+  api_secret: "password?"
+  operator_id: "int(1,)"
+  dry_run: bool
+  run_on_start: bool
+  run_time_utc: "match(^([01][0-9]|2[0-3]):[0-5][0-9]$)"
+  allocation_index: "int(0,100)"
+  allocation_top3: "int(0,100)"
+  allocation_meme: "int(0,100)"
+  index_size: "int(3,25)"
+  index_max_weight_pct: "int(5,100)"
+  top3_sma_days: "int(5,400)"
+  meme_sma_days: "int(5,400)"
+  meme_count: "int(1,10)"
+  hysteresis_pct: "float(0,20)"
+  exclude_coins:
+    - "str"
+  min_trade_eur: "float(5,)"
+  max_turnover_pct: "int(1,100)"
+  notify_service: "str?"
+  signal_url: "str?"
+  coingecko_api_key: "password?"
+  run_backtest_on_start: bool
+  backtest_start: "match(^[0-9]{4}-[0-9]{2}-[0-9]{2}$)"
