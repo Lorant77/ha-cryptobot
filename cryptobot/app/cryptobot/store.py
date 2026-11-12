@@ -1,4 +1,4 @@
-"""Állapot (SQLite a /data-ban, benne van a HA mentésekben) + CSV export a /share-be."""
+"""State (SQLite in /data, included in HA backups) + CSV export to /share."""
 from __future__ import annotations
 
 import csv
@@ -25,7 +25,7 @@ class Store:
         )
         self.db.commit()
 
-    # --- kulcs-érték ---
+    # --- key-value ---
     def get(self, key: str, default=None):
         row = self.db.execute("SELECT v FROM kv WHERE k=?", (key,)).fetchone()
         return json.loads(row[0]) if row else default
@@ -34,7 +34,7 @@ class Store:
         self.db.execute("INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)", (key, json.dumps(value)))
         self.db.commit()
 
-    # --- napló ---
+    # --- log ---
     @staticmethod
     def _now() -> str:
         return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -66,4 +66,4 @@ class Store:
                     w.writerow(header)
                 w.writerow(row)
         except OSError:
-            pass  # a CSV csak kényelmi export; az SQLite a forrás
+            pass  # the CSV is only a convenience export; SQLite is the source of truth

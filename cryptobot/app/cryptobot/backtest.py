@@ -1,8 +1,8 @@
-"""Egyszerű visszateszt Bitvavo napi záróárakon.
+"""Simple backtest on Bitvavo daily closing prices.
 
-Fontos korlát: a coin-univerzum a MAI toplista (survivorship bias) – a múltbeli
-top 10 / meme összetétel nem ingyenesen elérhető. Az eredmény tehát a stratégia
-viselkedését mutatja (kilépések, drawdown), nem pontos múltbeli hozamot.
+Important limitation: the coin universe is TODAY's ranking (survivorship bias),
+because historical top-10 / meme compositions are not freely available. The
+result shows the strategy's behaviour (exits, drawdowns), not exact past returns.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from .config import Config
 from .strategy import SleeveInputs, build_targets, capped_weights, select_universe, sma, trend_state
 
 log = logging.getLogger(__name__)
-FEE = 0.0025  # Bitvavo taker díj kis forgalomnál (ellenőrizd a saját díjszinted)
+FEE = 0.0025  # Bitvavo taker fee at low volume (check your own fee tier)
 DAY_MS = 86_400_000
 
 
@@ -30,8 +30,8 @@ class Result:
     fees: float
 
     def line(self) -> str:
-        return (f"{self.name:<34} hozam {self.total_return:8.1f}%  CAGR {self.cagr:6.1f}%  "
-                f"max DD {self.max_dd:6.1f}%  újrasúly. {self.rebalances:4d}  díj {self.fees:8.2f} EUR")
+        return (f"{self.name:<34} return {self.total_return:8.1f}%  CAGR {self.cagr:6.1f}%  "
+                f"max DD {self.max_dd:6.1f}%  rebal. {self.rebalances:4d}  fees {self.fees:8.2f} EUR")
 
 
 def _metrics(name: str, equity: list[float], days: int, rebalances: int, fees: float) -> Result:
@@ -112,29 +112,29 @@ def run_backtest(cfg: Config, exchange, out_dir: str) -> str:
         try:
             closes[b] = dict(md.daily_closes(exchange, b, 0, since_ms=since))
         except Exception as exc:
-            log.warning("Nincs adat: %s (%s)", b, exc)
+            log.warning("No data: %s (%s)", b, exc)
     days = sorted(closes.get("BTC", {}).keys())
     if not days:
-        raise RuntimeError("Nem sikerült BTC adatot letölteni")
+        raise RuntimeError("Could not download BTC data")
     n_days = len(days)
     alloc = cfg.allocations
 
-    lines = [f"Visszateszt {datetime.fromtimestamp(days[0]/1000, tz=timezone.utc):%Y-%m-%d} – "
-             f"{datetime.fromtimestamp(days[-1]/1000, tz=timezone.utc):%Y-%m-%d} (bemelegítéssel), díj {FEE*100:.2f}%",
+    lines = [f"Backtest {datetime.fromtimestamp(days[0]/1000, tz=timezone.utc):%Y-%m-%d} – "
+             f"{datetime.fromtimestamp(days[-1]/1000, tz=timezone.utc):%Y-%m-%d} (incl. warm-up), fee {FEE*100:.2f}%",
              f"Index: { {k: round(v, 3) for k, v in weights.items()} }",
              f"Top3: {top3}  Meme: {meme}",
-             "FIGYELEM: a coinlista a mai toplista (survivorship bias).", ""]
+             "NOTE: the coin list is today's ranking (survivorship bias).", ""]
 
     eq, rb, fe = simulate(closes, days, alloc, weights, top3, meme, cfg.top3_sma_days,
                           cfg.meme_sma_days, cfg.hysteresis_pct)
-    lines.append(_metrics(f"Beállított (SMA {cfg.top3_sma_days}/{cfg.meme_sma_days})", eq, n_days, rb, fe).line())
+    lines.append(_metrics(f"Configured (SMA {cfg.top3_sma_days}/{cfg.meme_sma_days})", eq, n_days, rb, fe).line())
     eq, rb, fe = simulate(closes, days, alloc, weights, top3, meme, cfg.top3_sma_days,
                           cfg.meme_sma_days, cfg.hysteresis_pct, protect=False)
-    lines.append(_metrics("Ugyanez védelem nélkül (HODL)", eq, n_days, rb, fe).line())
+    lines.append(_metrics("Same without protection (HODL)", eq, n_days, rb, fe).line())
     btc = [closes["BTC"][d] for d in days]
-    lines.append(_metrics("BTC vedd és tartsd", btc, n_days, 0, 0).line())
+    lines.append(_metrics("BTC buy and hold", btc, n_days, 0, 0).line())
     lines.append("")
-    lines.append("Érzékenység (SMA napok mindkét trend-részre):")
+    lines.append("Sensitivity (SMA days for both trend sleeves):")
     for n in (20, 30, 50, 100, 200):
         eq, rb, fe = simulate(closes, days, alloc, weights, top3, meme, n, n, cfg.hysteresis_pct)
         lines.append(_metrics(f"  SMA {n}", eq, n_days, rb, fe).line())

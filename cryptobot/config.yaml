@@ -1,5 +1,5 @@
 name: "Crypto Bot (Bitvavo)"
-version: "0.2.0"
+version: "0.2.1"
 slug: "cryptobot"
 description: "Self-hosted Bitvavo trading bot: Top 10 index + Top 3 Trend + Meme Trend"
 arch:

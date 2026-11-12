@@ -18,8 +18,6 @@ A self-hosted, rule-based trading bot for Bitvavo. It uses a three-sleeve setup:
 
 > This is not financial advice. Trading crypto assets is risky.
 
-**Language note:** log lines and Home Assistant notifications are currently in Hungarian. The messages quoted below are shown as they appear, with English translations in brackets.
-
 ---
 
 ## 1. Prerequisites
@@ -164,8 +162,8 @@ entities:
 
 ## 6. Checking the first run
 
-- **Log** tab: you should see the line `Crypto Bot indul – mód: DRY-RUN` [starting, mode: DRY-RUN], then the selected coins, then a `[DRY-RUN] Ok: első futás …` [reason: first run] block listing the planned orders.
-- **Phone:** you get a "Crypto Bot – szimuláció" [simulation] notification.
+- **Log** tab: you should see the line `Crypto Bot starting – mode: DRY-RUN`, then the selected coins, then a `[DRY-RUN] Reason: first run …` block listing the planned orders.
+- **Phone:** you get a "Crypto Bot – simulation" notification.
 - **Sensors** (Developer tools → States, search for `cryptobot`):
   - `sensor.cryptobot_portfolio_eur`: value of the managed portfolio
   - `sensor.cryptobot_top3`, `sensor.cryptobot_meme`: number of coins currently held (per-coin state in the attributes)
@@ -201,7 +199,7 @@ If the meme sleeve is too jumpy, increase `meme_sma_days` (e.g. to 80–100) or 
    - `api_key`, `api_secret` → the new key
    - `dry_run: false`
    - `max_turnover_pct: 100`, **for the first live run only**, because the switch-over usually means rearranging most positions.
-4. Save → Restart. The first live run ("átállás élesre" [switch to live]) sets up the target portfolio. Check the log and your Bitvavo order history.
+4. Save → Restart. The first live run ("switched to live") sets up the target portfolio. Check the log and your Bitvavo order history.
 5. Then set `max_turnover_pct: 60` again → Save → Restart.
 
 **Fees:** Bitvavo's taker fee at low volume is about 0.25% per order. The one-off switch-over therefore costs roughly 0.1–0.25% of the portfolio, and monthly rebalancing typically much less.
@@ -257,11 +255,11 @@ In `signal_url` you can set a URL that returns JSON like this:
 |---|---|
 | Does not appear under Local add-ons | Make sure `config.yaml` sits directly in `addons/cryptobot/`, not in a subfolder. Then ⋮ → Check for updates, or restart the host. |
 | Install hangs or fails | Check the Supervisor log: Settings → System → Logs → Supervisor. Often the build is just slow; try again. |
-| "Hiányzó API kulcs" [missing API key] | Fill in `api_key` and `api_secret`. |
-| "hitelesítési hiba" [authentication error] notification | IP whitelist (see section 10), or a wrong/deleted key. |
+| "Missing API key" | Fill in `api_key` and `api_secret`. |
+| "authentication error" notification | IP whitelist (see section 10), or a wrong/deleted key. |
 | "createOrder() requires an operatorId" | Set `operator_id` (e.g. 1001). |
 | "CoinGecko rate limit" | Get a free Demo API key from CoinGecko and set `coingecko_api_key`. |
-| "LEÁLLÍTVA … max_turnover_pct" [stopped] | For an intentional switch-over raise it temporarily; otherwise investigate why the bot wants to trade so much. |
+| "STOPPED … max_turnover_pct" | For an intentional switch-over raise it temporarily; otherwise investigate why the bot wants to trade so much. |
 
 ## 13. Security notes
 

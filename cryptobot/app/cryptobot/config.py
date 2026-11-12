@@ -1,4 +1,4 @@
-"""Beállítások betöltése a Home Assistant add-on options.json fájlból."""
+"""Load settings from the Home Assistant add-on options.json file."""
 from __future__ import annotations
 
 import json
@@ -38,7 +38,7 @@ class Config:
 
     @property
     def allocations(self) -> dict[str, float]:
-        """Normalizált arányok (pl. 52+28+21=101 kerekítés miatt)."""
+        """Normalized allocation (the inputs may not sum to exactly 100, e.g. 52+28+21=101)."""
         raw = {
             "index": float(self.allocation_index),
             "top3": float(self.allocation_top3),
@@ -46,7 +46,7 @@ class Config:
         }
         total = sum(raw.values())
         if total <= 0:
-            raise ValueError("Az allocation_* értékek összege nem lehet 0")
+            raise ValueError("The sum of allocation_* values cannot be 0")
         return {k: v / total for k, v in raw.items()}
 
     @property

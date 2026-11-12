@@ -32,10 +32,10 @@ def test_capped_weights_cap_too_low_falls_back_to_equal():
 def test_trend_hysteresis():
     assert trend_state(105, 100, None, 2) is True
     assert trend_state(97, 100, None, 2) is False
-    assert trend_state(101, 100, False, 2) is False   # sávon belül marad az előző
+    assert trend_state(101, 100, False, 2) is False   # inside the band: keep the previous state
     assert trend_state(99, 100, True, 2) is True
     assert trend_state(99, 100, True, 2, defensive=True) is False
-    assert trend_state(103, 100, False, 2, defensive=True) is False  # belépéshez 4% kell
+    assert trend_state(103, 100, False, 2, defensive=True) is False  # entry needs 4%
     assert trend_state(50, None, True, 2) is False
 
 
@@ -62,7 +62,7 @@ def test_build_targets_protect_off_goes_to_eur():
     assert t["ETH"] == pytest.approx(200)
     assert t["XRP"] == pytest.approx(100)
     assert "DOGE" not in t
-    assert sum(t.values()) == pytest.approx(700)  # ETH-rész (100) + meme (200) EUR-ban marad
+    assert sum(t.values()) == pytest.approx(700)  # ETH share (100) + meme (200) stay in EUR
 
 
 def test_plan_orders_sells_first_and_thresholds():
@@ -124,7 +124,7 @@ def env(tmp_path, monkeypatch):
     memes = [("DOGE", 2e10), ("PEPE", 4e9)]
     monkeypatch.setattr(md, "ranked_coins",
                         lambda key="", category=None, per_page=100: memes if category else ranked)
-    trend = {"BTC": 1.2, "ETH": 0.8, "XRP": 1.2, "DOGE": 1.2, "PEPE": 0.8}  # ár / SMA
+    trend = {"BTC": 1.2, "ETH": 0.8, "XRP": 1.2, "DOGE": 1.2, "PEPE": 0.8}  # price / SMA
 
     def closes(ex, base, days, since_ms=None):
         p = prices[base]
@@ -150,17 +150,17 @@ def test_dry_run_places_no_orders(env):
     bot, ex, ha = make_bot(env, True, {"EUR": 6000.0})
     out = bot.run_once()
     assert ex.orders == []
-    assert "DRY-RUN" in out and "első futás" in out
+    assert "DRY-RUN" in out and "first run" in out
     assert ha.sensors["portfolio_eur"] == 6000.0
-    # második futás ugyanazon a napon: nincs teendő
-    assert bot.run_once().startswith("Nincs teendő")
+    # second run on the same day: nothing to do
+    assert bot.run_once().startswith("Nothing to do")
 
 
 def test_live_run_buys_targets_and_respects_trend(env):
     bot, ex, ha = make_bot(env, False, {"EUR": 6000.0})
     bot.run_once()
     bought = {s.split("/")[0]: cost for s, side, _, cost in ex.orders if side == "buy"}
-    assert "PEPE" not in bought            # meme trend lefelé -> EUR
+    assert "PEPE" not in bought            # meme downtrend -> EUR
     assert "BTC" in bought and "DOGE" in bought
     assert sum(bought.values()) <= 6000 * 0.995 + 1e-6
 
@@ -169,7 +169,7 @@ def test_turnover_limit_blocks(env):
     bot, ex, ha = make_bot(env, False, {"EUR": 6000.0})
     bot.cfg.max_turnover_pct = 10
     out = bot.run_once()
-    assert "LEÁLLÍTVA" in out and ex.orders == []
+    assert "STOPPED" in out and ex.orders == []
 
 
 def test_switch_from_dry_to_live_forces_rebalance(env):
@@ -177,7 +177,7 @@ def test_switch_from_dry_to_live_forces_rebalance(env):
     bot.run_once()
     bot.cfg.dry_run = False
     out = bot.run_once()
-    assert "átállás élesre" in out
+    assert "switched to live" in out
     assert ex.orders
 
 
@@ -201,7 +201,7 @@ def test_simulate_protect_reduces_drawdown_in_crash():
     assert eq_p[-1] > eq_h[-1]
 
 
-# ---------------------------------------------------------------- HA csúszkák
+# ---------------------------------------------------------------- HA sliders
 def _set_sliders(ha, index, top3, meme):
     ha.states.update({
         "input_number.cryptobot_allocation_index": str(index),
@@ -215,7 +215,7 @@ def test_sliders_override_config(env):
     _set_sliders(ha, 100, 0, 0)
     bot.run_once()
     bought = {s.split("/")[0] for s, side, *_ in ex.orders if side == "buy"}
-    assert "DOGE" not in bought  # meme rész 0%
+    assert "DOGE" not in bought  # meme sleeve 0%
     assert ha.attrs["last_run"]["allocation_source"] == "home_assistant"
     assert ha.attrs["last_run"]["allocation_pct"]["index"] == 100.0
 
@@ -231,7 +231,7 @@ def test_slider_change_triggers_rebalance(env):
     bot, ex, ha = make_bot(env, True, {"EUR": 6000.0})
     _set_sliders(ha, 52, 28, 21)
     bot.run_once()
-    assert bot.run_once().startswith("Nincs teendő")
+    assert bot.run_once().startswith("Nothing to do")
     _set_sliders(ha, 70, 20, 10)
     out = bot.run_once()
-    assert "arányváltozás: 70/20/10" in out
+    assert "allocation change: 70/20/10" in out

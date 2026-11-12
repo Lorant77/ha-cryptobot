@@ -1,4 +1,4 @@
-"""Belépési pont: ütemező ciklus. Naponta egyszer fut a beállított UTC időpontban."""
+"""Entry point: scheduler loop. Runs once a day at the configured UTC time."""
 from __future__ import annotations
 
 import logging
@@ -36,15 +36,15 @@ def next_run(now: datetime, hhmm: str) -> datetime:
 def safe_run(bot: Bot, ha: HomeAssistant) -> None:
     try:
         result = bot.run_once()
-        log.info("Futás kész:\n%s", result)
+        log.info("Run finished:\n%s", result)
     except (ccxt.AuthenticationError, ccxt.PermissionDenied) as exc:
-        ha.notify("Crypto Bot – hitelesítési hiba",
-                  f"A Bitvavo elutasította a kérést: {exc}\n"
-                  "Gyakori ok: megváltozott az otthoni IP-cím (IP-whitelist), vagy rossz / lejárt API-kulcs. "
-                  "A bot nem kereskedett.")
+        ha.notify("Crypto Bot – authentication error",
+                  f"Bitvavo rejected the request: {exc}\n"
+                  "Common cause: your home IP address changed (IP whitelist), or the API key is wrong/expired. "
+                  "The bot did not trade.")
     except Exception as exc:
-        log.exception("Futás hiba")
-        ha.notify("Crypto Bot – hiba", f"{type(exc).__name__}: {exc}\nA bot ebben a körben nem kereskedett.")
+        log.exception("Run failed")
+        ha.notify("Crypto Bot – error", f"{type(exc).__name__}: {exc}\nThe bot did not trade in this run.")
 
 
 def main() -> None:
@@ -53,18 +53,18 @@ def main() -> None:
     store = Store(DATA_DIR, SHARE_DIR)
     ha = HomeAssistant(cfg.notify_service)
     bot = Bot(cfg, store, ha)
-    log.info("Crypto Bot indul – mód: %s, napi futás %s UTC, arányok: %s",
-             "DRY-RUN" if cfg.dry_run else "ÉLES", cfg.run_time_utc,
+    log.info("Crypto Bot starting – mode: %s, daily run at %s UTC, allocation: %s",
+             "DRY-RUN" if cfg.dry_run else "LIVE", cfg.run_time_utc,
              {k: round(v * 100, 1) for k, v in cfg.allocations.items()})
 
     if cfg.run_backtest_on_start:
         try:
             report = run_backtest(cfg, bot.ex, SHARE_DIR)
-            log.info("Visszateszt:\n%s", report)
-            ha.notify("Crypto Bot – visszateszt kész", report[:3000])
+            log.info("Backtest:\n%s", report)
+            ha.notify("Crypto Bot – backtest finished", report[:3000])
         except Exception as exc:
-            log.exception("Visszateszt hiba")
-            ha.notify("Crypto Bot – visszateszt hiba", str(exc))
+            log.exception("Backtest failed")
+            ha.notify("Crypto Bot – backtest error", str(exc))
 
     if cfg.run_on_start:
         safe_run(bot, ha)
@@ -72,17 +72,17 @@ def main() -> None:
     last_press = ha.state(RUN_NOW_ENTITY)
     while not _stop:
         target = next_run(datetime.now(timezone.utc), cfg.run_time_utc)
-        log.info("Következő futás: %s UTC", target.strftime("%Y-%m-%d %H:%M"))
+        log.info("Next run: %s UTC", target.strftime("%Y-%m-%d %H:%M"))
         while not _stop and datetime.now(timezone.utc) < target:
             time.sleep(min(60, max(1, (target - datetime.now(timezone.utc)).total_seconds())))
             press = ha.state(RUN_NOW_ENTITY)
             if press and press != last_press:
                 last_press = press
-                log.info("Kézi futtatás (Run now gomb)")
+                log.info("Manual run (Run now button)")
                 safe_run(bot, ha)
         if not _stop and datetime.now(timezone.utc) >= target:
             safe_run(bot, ha)
-    log.info("Leállás.")
+    log.info("Shutting down.")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Egy futás: adatok -> jelek -> célportfólió -> megbízások (vagy dry-run napló)."""
+"""One run: data -> signals -> target portfolio -> orders (or a dry-run log)."""
 from __future__ import annotations
 
 import logging
@@ -38,7 +38,7 @@ class Bot:
         self.ha = ha
         self.ex = exchange or make_exchange(cfg)
 
-    # ------------------------------------------------------------------ univerzum
+    # ------------------------------------------------------------------ universe
     def refresh_universe(self, available: set[str]) -> dict:
         ranked = md.ranked_coins(self.cfg.coingecko_api_key, per_page=100)
         idx = select_universe(ranked, available, self.cfg.index_size, self.cfg.excluded)
@@ -51,13 +51,13 @@ class Bot:
             "top3": [s for s, _ in idx[:3]],
             "meme": [s for s, _ in memes],
         }
-        log.info("Új univerzum: index=%s top3=%s meme=%s",
+        log.info("New universe: index=%s top3=%s meme=%s",
                  {k: round(v, 3) for k, v in weights.items()}, uni["top3"], uni["meme"])
         return uni
 
-    # ------------------------------------------------------------------ arányok
+    # ------------------------------------------------------------------ allocation
     def effective_allocations(self) -> tuple[dict[str, float], str]:
-        """A HA csúszkák (input_number) értékei, ha mindhárom létezik; különben az add-on beállítás."""
+        """Values of the HA sliders (input_number) if all three exist; otherwise the add-on options."""
         values = {k: self.ha.number(e) for k, e in ALLOC_ENTITIES.items()}
         if all(v is not None and v >= 0 for v in values.values()) and sum(values.values()) > 0:
             total = sum(values.values())
@@ -76,11 +76,11 @@ class Bot:
             info[base] = {"close": close, "sma": s, "hold": states[base]}
         return states, info
 
-    # ------------------------------------------------------------------ fő futás
+    # ------------------------------------------------------------------ main run
     def run_once(self) -> str:
         cfg = self.cfg
         if not cfg.api_key or not cfg.api_secret:
-            raise RuntimeError("Hiányzó API kulcs. Dry-runhoz elég egy csak 'View information' jogú kulcs.")
+            raise RuntimeError("Missing API key. For dry-run, a key with only 'View information' permission is enough.")
 
         now = datetime.now(timezone.utc)
         month = now.strftime("%Y-%m")
@@ -99,7 +99,7 @@ class Bot:
         new_states = {**top3_states, **meme_states}
         changed = sorted(b for b, v in new_states.items() if prev_states.get(b) != v and b in prev_states)
 
-        # --- jelenlegi portfólió (csak a kezelt eszközök) ---
+        # --- current portfolio (managed assets only) ---
         balance = self.ex.fetch_balance()
         totals = {k: float(v) for k, v in (balance.get("total") or {}).items() if v}
         free = {k: float(v) for k, v in (balance.get("free") or {}).items() if v}
@@ -123,15 +123,15 @@ class Bot:
         switched_live = last_mode == "dry" and mode_label == "live"
         reasons = []
         if first_run:
-            reasons.append("első futás")
+            reasons.append("first run")
         if new_month:
-            reasons.append(f"havi újrasúlyozás ({month})")
+            reasons.append(f"monthly rebalance ({month})")
         if changed:
-            reasons.append("trendváltás: " + ", ".join(f"{b}->{'tart' if new_states[b] else 'EUR'}" for b in changed))
+            reasons.append("trend change: " + ", ".join(f"{b}->{'hold' if new_states[b] else 'EUR'}" for b in changed))
         if switched_live:
-            reasons.append("átállás élesre")
+            reasons.append("switched to live")
         if alloc_changed:
-            reasons.append("arányváltozás: " + "/".join(f"{alloc[k]*100:.0f}" for k in ("index", "top3", "meme")))
+            reasons.append("allocation change: " + "/".join(f"{alloc[k]*100:.0f}" for k in ("index", "top3", "meme")))
 
         inputs = SleeveInputs(uni["index_weights"], uni["top3"], top3_states, uni["meme"], meme_states)
         targets = build_targets(total, alloc, inputs)
@@ -141,19 +141,19 @@ class Bot:
             self.store.set("states", new_states)
             self.store.set("last_mode", mode_label)
             self.store.set("universe", uni)
-            self.store.record_run(cfg.dry_run, total, False, "nincs teendő")
-            return f"Nincs teendő. Portfólió: {total:,.2f} EUR"
+            self.store.record_run(cfg.dry_run, total, False, "nothing to do")
+            return f"Nothing to do. Portfolio: {total:,.2f} EUR"
 
         orders = plan_orders(current, targets, cfg.min_trade_eur)
         turnover = turnover_pct(orders, total)
-        header = (f"{'[DRY-RUN] ' if cfg.dry_run else ''}Ok: {'; '.join(reasons)}\n"
-                  f"Portfólió: {total:,.2f} EUR, forgalom: {turnover:.1f}%")
+        header = (f"{'[DRY-RUN] ' if cfg.dry_run else ''}Reason: {'; '.join(reasons)}\n"
+                  f"Portfolio: {total:,.2f} EUR, turnover: {turnover:.1f}%")
 
         if turnover > cfg.max_turnover_pct:
-            msg = (f"{header}\nLEÁLLÍTVA: a tervezett forgalom ({turnover:.1f}%) nagyobb, mint a "
-                   f"max_turnover_pct ({cfg.max_turnover_pct}%). Ha ez szándékos (pl. átállás), "
-                   f"emeld meg ideiglenesen.\n" + "\n".join(map(str, orders)))
-            self.ha.notify("Crypto Bot – leállítva", msg)
+            msg = (f"{header}\nSTOPPED: planned turnover ({turnover:.1f}%) exceeds "
+                   f"max_turnover_pct ({cfg.max_turnover_pct}%). If this is intentional (e.g. switch-over), "
+                   f"raise it temporarily.\n" + "\n".join(map(str, orders)))
+            self.ha.notify("Crypto Bot – stopped", msg)
             self.store.record_run(cfg.dry_run, total, False, "turnover limit")
             return msg
 
@@ -165,11 +165,11 @@ class Bot:
         self.store.set("last_alloc", alloc)
         self.store.record_run(cfg.dry_run, total, True, "; ".join(reasons))
 
-        body = header + "\n" + ("\n".join(results) if results else "Nincs küszöb feletti eltérés.")
-        self.ha.notify("Crypto Bot – " + ("szimuláció" if cfg.dry_run else "kereskedés"), body)
+        body = header + "\n" + ("\n".join(results) if results else "No deviation above the threshold.")
+        self.ha.notify("Crypto Bot – " + ("simulation" if cfg.dry_run else "trades"), body)
         return body
 
-    # ------------------------------------------------------------------ végrehajtás
+    # ------------------------------------------------------------------ execution
     def _min_cost(self, base: str) -> float:
         m = self.ex.markets.get(f"{base}/EUR", {}) if self.ex.markets else {}
         mc = ((m.get("limits") or {}).get("cost") or {}).get("min")
@@ -181,25 +181,25 @@ class Bot:
         for o in [x for x in orders if x.side == "sell"]:
             price = prices.get(o.base, 0)
             if price <= 0:
-                out.append(f"KIHAGYVA {o.base}: nincs ár")
+                out.append(f"SKIPPED {o.base}: no price")
                 continue
             amount = free.get(o.base, 0.0) if o.sell_all else min(free.get(o.base, 0.0), o.eur / price)
             if amount * price < self._min_cost(o.base):
-                out.append(f"KIHAGYVA {o} (minimum alatt)")
+                out.append(f"SKIPPED {o} (below minimum)")
                 continue
             out.append(self._place(o, amount=amount, dry=dry))
 
         buys = [x for x in orders if x.side == "buy"]
         if buys:
             eur_free = free.get("EUR", 0.0) if dry else float((self.ex.fetch_balance().get("free") or {}).get("EUR", 0))
-            if dry:  # szimulációban az eladások bevételét is számoljuk
+            if dry:  # in simulation, count the proceeds of the sells as well
                 eur_free += sum(o.eur for o in orders if o.side == "sell")
             need = sum(o.eur for o in buys)
             scale = min(1.0, eur_free * 0.995 / need) if need > 0 else 0
             for o in buys:
                 cost = o.eur * scale
                 if cost < self._min_cost(o.base):
-                    out.append(f"KIHAGYVA {o} (minimum alatt / kevés EUR)")
+                    out.append(f"SKIPPED {o} (below minimum / not enough EUR)")
                     continue
                 o.eur = cost
                 out.append(self._place(o, cost=cost, dry=dry))
@@ -209,7 +209,7 @@ class Bot:
         symbol = f"{o.base}/EUR"
         if dry:
             self.store.record_trade(True, o.base, o.side, o.eur, amount, "", "dry-run")
-            return f"(szim.) {o}"
+            return f"(sim) {o}"
         try:
             if o.side == "sell":
                 amt = float(self.ex.amount_to_precision(symbol, amount))
@@ -220,14 +220,14 @@ class Bot:
             self.store.record_trade(False, o.base, o.side, o.eur, amount, oid, str(res.get("status", "")))
             return f"OK {o}"
         except Exception as exc:
-            self.store.record_trade(False, o.base, o.side, o.eur, amount, "", f"hiba: {exc}")
-            log.exception("Megbízás hiba: %s", o)
-            return f"HIBA {o}: {exc}"
+            self.store.record_trade(False, o.base, o.side, o.eur, amount, "", f"error: {exc}")
+            log.exception("Order error: %s", o)
+            return f"ERROR {o}: {exc}"
 
-    # ------------------------------------------------------------------ HA szenzorok
+    # ------------------------------------------------------------------ HA sensors
     def _publish_sensors(self, total, signal, top3_info, meme_info, targets, uni, alloc, alloc_source) -> None:
         def fmt(info):
-            return {b: ("tart" if v["hold"] else "EUR") for b, v in info.items()}
+            return {b: ("hold" if v["hold"] else "EUR") for b, v in info.items()}
         self.ha.sensor("portfolio_eur", round(total, 2),
                        {"unit_of_measurement": "EUR", "device_class": "monetary", "state_class": "total"})
         self.ha.sensor("top3", sum(v["hold"] for v in top3_info.values()),

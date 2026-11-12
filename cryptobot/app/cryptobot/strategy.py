@@ -1,15 +1,15 @@
-"""Tiszta stratégia-logika (nincs hálózat, könnyen tesztelhető).
+"""Pure strategy logic (no network access, easy to test).
 
-Három rész ("sleeve"):
-  index – top N coin piaci kapitalizáció szerint, felső súlykorláttal, havi újrasúlyozás
-  top3  – a 3 legnagyobb coin, coinonként trendszűrő (SMA + hiszterézis), különben EUR
-  meme  – a legnagyobb meme coinok, ugyanilyen trendszűrővel, különben EUR
+Three sleeves:
+  index – top N coins by market cap, with a per-coin weight cap, rebalanced monthly
+  top3  – the 3 largest coins, per-coin trend filter (SMA + hysteresis), otherwise EUR
+  meme  – the largest meme coins, same trend filter, otherwise EUR
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Stablecoinok, becsomagolt / liquid staking tokenek: ezek nem kerülnek az indexbe.
+# Stablecoins, wrapped / liquid staking tokens: never part of the index.
 EXCLUDED_FROM_UNIVERSE = {
     "USDT", "USDC", "DAI", "FDUSD", "USDE", "USDS", "PYUSD", "TUSD", "BUSD", "USDD",
     "USD1", "RLUSD", "FRAX", "GHO", "USDT0", "SUSDE", "SUSDS", "BUIDL", "USDTB", "USDY",
@@ -29,14 +29,14 @@ def sma(values: list[float], n: int) -> float | None:
 
 def trend_state(close: float, sma_value: float | None, previous: bool | None,
                 band_pct: float, defensive: bool = False) -> bool:
-    """True = tartjuk a coint, False = EUR-ban várunk.
+    """True = hold the coin, False = wait in EUR.
 
-    Hiszterézis: belépés, ha az ár > SMA*(1+band); kilépés, ha < SMA*(1-band);
-    a kettő között az előző állapot marad. Defensive módban a kilépés már
-    SMA alatt megtörténik, a belépéshez pedig dupla sáv kell.
+    Hysteresis: enter if price > SMA*(1+band); exit if price < SMA*(1-band);
+    in between, keep the previous state. In defensive mode the exit happens
+    as soon as the price is below the SMA, and entry requires twice the band.
     """
     if sma_value is None:
-        return False  # nincs elég adat -> óvatos
+        return False  # not enough data -> stay cautious
     band = band_pct / 100.0
     upper = sma_value * (1 + (2 * band if defensive else band))
     lower = sma_value * (1 - (0 if defensive else band))
@@ -52,12 +52,12 @@ def trend_state(close: float, sma_value: float | None, previous: bool | None,
 
 
 def capped_weights(caps: dict[str, float], max_weight: float) -> dict[str, float]:
-    """Piaci kapitalizáció szerinti súlyok felső korláttal; a többlet arányosan szétosztva."""
+    """Market-cap weights with an upper cap; the excess is redistributed proportionally."""
     caps = {k: v for k, v in caps.items() if v and v > 0}
     if not caps:
         return {}
     n = len(caps)
-    max_weight = max(max_weight, 1.0 / n)  # különben nem lehet 100%-ot kiosztani
+    max_weight = max(max_weight, 1.0 / n)  # otherwise 100% cannot be allocated
     weights: dict[str, float] = {}
     free = dict(caps)
     remaining = 1.0
@@ -77,7 +77,7 @@ def capped_weights(caps: dict[str, float], max_weight: float) -> dict[str, float
 
 @dataclass
 class SleeveInputs:
-    index_weights: dict[str, float]   # base -> súly (összeg 1)
+    index_weights: dict[str, float]   # base -> weight (sums to 1)
     top3: list[str]                   # base-ek
     top3_states: dict[str, bool]
     meme: list[str]
@@ -85,7 +85,7 @@ class SleeveInputs:
 
 
 def build_targets(total_eur: float, alloc: dict[str, float], s: SleeveInputs) -> dict[str, float]:
-    """Cél EUR-érték coinonként. Ami nincs benne, az EUR-ban marad."""
+    """Target EUR value per coin. Anything not allocated stays in EUR."""
     targets: dict[str, float] = {}
 
     def add(base: str, eur: float) -> None:
@@ -111,7 +111,7 @@ def build_targets(total_eur: float, alloc: dict[str, float], s: SleeveInputs) ->
 class PlannedOrder:
     base: str
     side: str          # "sell" | "buy"
-    eur: float         # becsült EUR érték
+    eur: float         # estimated EUR value
     sell_all: bool = False
 
     def __str__(self) -> str:
@@ -121,7 +121,7 @@ class PlannedOrder:
 
 def plan_orders(current: dict[str, float], targets: dict[str, float],
                 min_trade_eur: float) -> list[PlannedOrder]:
-    """Eladások előbb, aztán vételek. A min_trade_eur alatti eltérést figyelmen kívül hagyja."""
+    """Sells first, then buys. Deviations below min_trade_eur are ignored."""
     sells: list[PlannedOrder] = []
     buys: list[PlannedOrder] = []
     for base in sorted(set(current) | set(targets)):
@@ -147,7 +147,7 @@ def turnover_pct(orders: list[PlannedOrder], total_eur: float) -> float:
 
 def select_universe(ranked: list[tuple[str, float]], available: set[str], n: int,
                     excluded: set[str]) -> list[tuple[str, float]]:
-    """A kapitalizáció szerint rendezett listából az első n, ami Bitvavón EUR-párral elérhető."""
+    """The first n coins of the market-cap ranking that have an EUR pair on Bitvavo."""
     out: list[tuple[str, float]] = []
     seen: set[str] = set()
     for sym, cap in ranked:

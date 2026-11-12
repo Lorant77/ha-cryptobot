@@ -1,4 +1,4 @@
-"""Home Assistant integráció a Supervisor API-n át: értesítés + szenzorok."""
+"""Home Assistant integration via the Supervisor API: notifications + sensors."""
 from __future__ import annotations
 
 import logging
@@ -27,10 +27,10 @@ class HomeAssistant:
                               headers={"Authorization": f"Bearer {self.token}"})
             r.raise_for_status()
         except Exception as exc:
-            log.warning("HA API hívás sikertelen (%s): %s", path, exc)
+            log.warning("HA API call failed (%s): %s", path, exc)
 
     def state(self, entity_id: str) -> str | None:
-        """Egy entitás állapota szövegként, vagy None, ha nem létezik / nem elérhető."""
+        """State of an entity as a string, or None if it does not exist / is unavailable."""
         if not self.enabled:
             return None
         try:
@@ -42,7 +42,7 @@ class HomeAssistant:
             value = r.json().get("state")
             return None if value in (None, "unknown", "unavailable") else str(value)
         except Exception as exc:
-            log.warning("HA állapot nem olvasható (%s): %s", entity_id, exc)
+            log.warning("Could not read HA state (%s): %s", entity_id, exc)
             return None
 
     def number(self, entity_id: str) -> float | None:
@@ -53,7 +53,7 @@ class HomeAssistant:
             return None
 
     def notify(self, title: str, message: str) -> None:
-        log.info("ÉRTESÍTÉS: %s – %s", title, message.replace("\n", " | "))
+        log.info("NOTIFY: %s – %s", title, message.replace("\n", " | "))
         if not self.notify_service:
             return
         service = self.notify_service.removeprefix("notify.")

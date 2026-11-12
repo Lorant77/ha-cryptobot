@@ -1,4 +1,4 @@
-# Titkok és futási adatok – soha ne kerüljenek a repóba
+# Secrets and runtime data – never commit these
 options.json
 *.db
 *.db-journal
