@@ -1,0 +1,21 @@
+# Titkok és futási adatok – soha ne kerüljenek a repóba
+options.json
+*.db
+*.db-journal
+*.csv
+backtest_*.txt
+.env
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
