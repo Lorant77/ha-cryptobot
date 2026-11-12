@@ -4,6 +4,7 @@ A Home Assistant add-on for a simple, rule-based crypto portfolio bot on the [Bi
 
 - **Top 10 Index**: market-cap weighted with a per-coin cap, rebalanced monthly
 - **Top 3 Trend** and **Meme Trend**: trend filter (SMA + hysteresis) that moves to EUR in downtrends
+- Allocation sliders and a Run now button on your Home Assistant dashboard
 - Dry-run mode, turnover limit, Home Assistant notifications and sensors, backtest
 
 ## Installing in Home Assistant

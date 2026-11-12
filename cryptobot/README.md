@@ -8,7 +8,7 @@ A self-hosted, rule-based trading bot for Bitvavo. It uses a three-sleeve setup:
 | **Top 3 Trend** | 28% | The 3 largest coins, equally weighted. Each is held only while its price is above the 50-day moving average (with ±2% hysteresis); otherwise the bot waits in EUR. |
 | **Meme Trend** | 21% | The 5 largest meme coins (CoinGecko "meme-token" category), with the same trend filter. |
 
-**When it trades:** it runs once a day (by default at 00:10 UTC, after the daily candle closes). It only trades when (1) a new month has started, (2) the trend of one of the trend-sleeve coins has flipped, (3) this is the first run, or (4) you have just switched from dry-run to live. In those cases it rebalances the whole portfolio to the target weights.
+**When it trades:** it runs once a day (by default at 00:10 UTC, after the daily candle closes). It only trades when (1) a new month has started, (2) the trend of one of the trend-sleeve coins has flipped, (3) this is the first run, (4) you have just switched from dry-run to live, or (5) the allocation percentages have changed. In those cases it rebalances the whole portfolio to the target weights.
 
 **Safety limits:**
 - `dry_run: true` is the default; in this mode no orders are placed.
@@ -91,6 +91,76 @@ The most important options:
 | `coingecko_api_key` | empty | Only needed if CoinGecko rate-limits you (free "Demo" key). |
 
 **Save** → **Info** tab → **Start**. Enable **Start on boot** and **Watchdog**.
+
+## 5a. Adjusting the allocation from a dashboard (optional)
+
+Instead of editing `allocation_*` in the add-on configuration (which needs a restart), you can control the three percentages with sliders on a Home Assistant dashboard, plus a **Run now** button.
+
+**1. Create the helpers.** Add this to `configuration.yaml` (or to a package), then restart Home Assistant (or Developer tools → YAML → reload *Input numbers* and *Input buttons*):
+
+```yaml
+input_number:
+  cryptobot_allocation_index:
+    name: "Crypto Bot – Top 10 Index"
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    mode: slider
+    icon: mdi:chart-pie
+  cryptobot_allocation_top3:
+    name: "Crypto Bot – Top 3 Trend"
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    mode: slider
+    icon: mdi:trending-up
+  cryptobot_allocation_meme:
+    name: "Crypto Bot – Meme Trend"
+    min: 0
+    max: 100
+    step: 1
+    unit_of_measurement: "%"
+    mode: slider
+    icon: mdi:dog
+
+input_button:
+  cryptobot_run_now:
+    name: "Crypto Bot – Run now"
+    icon: mdi:play
+```
+
+The entity IDs must be exactly `input_number.cryptobot_allocation_index`, `input_number.cryptobot_allocation_top3`, `input_number.cryptobot_allocation_meme` and `input_button.cryptobot_run_now`. (You can also create them in the UI under Settings → Devices & services → Helpers, as long as the entity IDs match.)
+
+**2. Add a dashboard card** (Edit dashboard → Add card → Manual):
+
+```yaml
+type: entities
+title: Crypto Bot
+entities:
+  - input_number.cryptobot_allocation_index
+  - input_number.cryptobot_allocation_top3
+  - input_number.cryptobot_allocation_meme
+  - input_button.cryptobot_run_now
+  - type: attribute
+    entity: sensor.cryptobot_last_run
+    attribute: allocation_pct
+    name: Active allocation (%)
+  - type: attribute
+    entity: sensor.cryptobot_last_run
+    attribute: allocation_source
+    name: Allocation source
+  - sensor.cryptobot_portfolio_eur
+  - sensor.cryptobot_last_run
+```
+
+**How it works:**
+- If **all three** sliders exist and their sum is above 0, they override the `allocation_*` options. Otherwise the add-on configuration is used. The `allocation_source` attribute shows which one is active (`home_assistant` or `addon_config`).
+- The values are normalized, so they do not need to add up to exactly 100 (e.g. 50/30/20 and 5/3/2 are the same).
+- Changes take effect on the **next run**: the daily run, or immediately when you press **Run now**. A change of more than 0.5 percentage points triggers a full rebalance.
+- Set all three sliders first, then press **Run now**. The bot reads the sliders only when it runs, so moving them one at a time is fine, as long as you don't press the button in between.
+- **Run now in live mode places real orders.** The `max_turnover_pct` limit still applies.
 
 ## 6. Checking the first run
 

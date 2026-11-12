@@ -29,6 +29,29 @@ class HomeAssistant:
         except Exception as exc:
             log.warning("HA API hívás sikertelen (%s): %s", path, exc)
 
+    def state(self, entity_id: str) -> str | None:
+        """Egy entitás állapota szövegként, vagy None, ha nem létezik / nem elérhető."""
+        if not self.enabled:
+            return None
+        try:
+            r = requests.get(f"{BASE}/states/{entity_id}", timeout=15,
+                             headers={"Authorization": f"Bearer {self.token}"})
+            if r.status_code == 404:
+                return None
+            r.raise_for_status()
+            value = r.json().get("state")
+            return None if value in (None, "unknown", "unavailable") else str(value)
+        except Exception as exc:
+            log.warning("HA állapot nem olvasható (%s): %s", entity_id, exc)
+            return None
+
+    def number(self, entity_id: str) -> float | None:
+        value = self.state(entity_id)
+        try:
+            return float(value) if value is not None else None
+        except ValueError:
+            return None
+
     def notify(self, title: str, message: str) -> None:
         log.info("ÉRTESÍTÉS: %s – %s", title, message.replace("\n", " | "))
         if not self.notify_service:

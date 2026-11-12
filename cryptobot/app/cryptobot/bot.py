@@ -15,6 +15,11 @@ from .strategy import (SleeveInputs, build_targets, capped_weights, plan_orders,
 
 log = logging.getLogger(__name__)
 DUST_EUR = 1.0
+ALLOC_ENTITIES = {
+    "index": "input_number.cryptobot_allocation_index",
+    "top3": "input_number.cryptobot_allocation_top3",
+    "meme": "input_number.cryptobot_allocation_meme",
+}
 
 
 def make_exchange(cfg: Config) -> ccxt.bitvavo:
@@ -49,6 +54,15 @@ class Bot:
         log.info("Új univerzum: index=%s top3=%s meme=%s",
                  {k: round(v, 3) for k, v in weights.items()}, uni["top3"], uni["meme"])
         return uni
+
+    # ------------------------------------------------------------------ arányok
+    def effective_allocations(self) -> tuple[dict[str, float], str]:
+        """A HA csúszkák (input_number) értékei, ha mindhárom létezik; különben az add-on beállítás."""
+        values = {k: self.ha.number(e) for k, e in ALLOC_ENTITIES.items()}
+        if all(v is not None and v >= 0 for v in values.values()) and sum(values.values()) > 0:
+            total = sum(values.values())
+            return {k: v / total for k, v in values.items()}, "home_assistant"
+        return self.cfg.allocations, "addon_config"
 
     # ------------------------------------------------------------------ trend
     def trend_states(self, bases: list[str], sma_days: int, mode: str, prev: dict) -> tuple[dict, dict]:
@@ -100,6 +114,10 @@ class Bot:
         eur = totals.get("EUR", 0.0)
         total = eur + sum(current.values())
 
+        alloc, alloc_source = self.effective_allocations()
+        prev_alloc = self.store.get("last_alloc")
+        alloc_changed = bool(prev_alloc) and any(abs(alloc[k] - prev_alloc.get(k, 0)) > 0.005 for k in alloc)
+
         last_mode = self.store.get("last_mode")
         first_run = self.store.get("last_rebalance") is None
         switched_live = last_mode == "dry" and mode_label == "live"
@@ -112,10 +130,12 @@ class Bot:
             reasons.append("trendváltás: " + ", ".join(f"{b}->{'tart' if new_states[b] else 'EUR'}" for b in changed))
         if switched_live:
             reasons.append("átállás élesre")
+        if alloc_changed:
+            reasons.append("arányváltozás: " + "/".join(f"{alloc[k]*100:.0f}" for k in ("index", "top3", "meme")))
 
         inputs = SleeveInputs(uni["index_weights"], uni["top3"], top3_states, uni["meme"], meme_states)
-        targets = build_targets(total, cfg.allocations, inputs)
-        self._publish_sensors(total, signal, top3_info, meme_info, targets, uni)
+        targets = build_targets(total, alloc, inputs)
+        self._publish_sensors(total, signal, top3_info, meme_info, targets, uni, alloc, alloc_source)
 
         if not reasons:
             self.store.set("states", new_states)
@@ -142,6 +162,7 @@ class Bot:
         self.store.set("universe", uni)
         self.store.set("last_mode", mode_label)
         self.store.set("last_rebalance", now.isoformat(timespec="seconds"))
+        self.store.set("last_alloc", alloc)
         self.store.record_run(cfg.dry_run, total, True, "; ".join(reasons))
 
         body = header + "\n" + ("\n".join(results) if results else "Nincs küszöb feletti eltérés.")
@@ -204,7 +225,7 @@ class Bot:
             return f"HIBA {o}: {exc}"
 
     # ------------------------------------------------------------------ HA szenzorok
-    def _publish_sensors(self, total, signal, top3_info, meme_info, targets, uni) -> None:
+    def _publish_sensors(self, total, signal, top3_info, meme_info, targets, uni, alloc, alloc_source) -> None:
         def fmt(info):
             return {b: ("tart" if v["hold"] else "EUR") for b, v in info.items()}
         self.ha.sensor("portfolio_eur", round(total, 2),
@@ -216,4 +237,6 @@ class Bot:
         self.ha.sensor("last_run", datetime.now(timezone.utc).isoformat(timespec="seconds"),
                        {"device_class": "timestamp", "dry_run": self.cfg.dry_run,
                         "targets_eur": {k: round(v, 2) for k, v in sorted(targets.items())},
-                        "index_weights": {k: round(v, 4) for k, v in uni["index_weights"].items()}})
+                        "index_weights": {k: round(v, 4) for k, v in uni["index_weights"].items()},
+                        "allocation_pct": {k: round(v * 100, 1) for k, v in alloc.items()},
+                        "allocation_source": alloc_source})

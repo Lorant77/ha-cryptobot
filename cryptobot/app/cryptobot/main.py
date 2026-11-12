@@ -19,6 +19,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
                     stream=sys.stdout)
 log = logging.getLogger("cryptobot")
 _stop = False
+RUN_NOW_ENTITY = "input_button.cryptobot_run_now"
 
 
 def _handle_stop(*_):
@@ -68,12 +69,18 @@ def main() -> None:
     if cfg.run_on_start:
         safe_run(bot, ha)
 
+    last_press = ha.state(RUN_NOW_ENTITY)
     while not _stop:
         target = next_run(datetime.now(timezone.utc), cfg.run_time_utc)
         log.info("Következő futás: %s UTC", target.strftime("%Y-%m-%d %H:%M"))
         while not _stop and datetime.now(timezone.utc) < target:
             time.sleep(min(60, max(1, (target - datetime.now(timezone.utc)).total_seconds())))
-        if not _stop:
+            press = ha.state(RUN_NOW_ENTITY)
+            if press and press != last_press:
+                last_press = press
+                log.info("Kézi futtatás (Run now gomb)")
+                safe_run(bot, ha)
+        if not _stop and datetime.now(timezone.utc) >= target:
             safe_run(bot, ha)
     log.info("Leállás.")
 

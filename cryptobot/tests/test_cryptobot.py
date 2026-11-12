@@ -100,13 +100,21 @@ class FakeExchange:
 
 class FakeHA:
     def __init__(self):
-        self.notes, self.sensors = [], {}
+        self.notes, self.sensors, self.states, self.attrs = [], {}, {}, {}
+
+    def state(self, entity_id):
+        return self.states.get(entity_id)
+
+    def number(self, entity_id):
+        v = self.states.get(entity_id)
+        return float(v) if v is not None else None
 
     def notify(self, title, msg):
         self.notes.append((title, msg))
 
     def sensor(self, name, state, attrs=None):
         self.sensors[name] = state
+        self.attrs[name] = attrs or {}
 
 
 @pytest.fixture
@@ -191,3 +199,39 @@ def test_simulate_protect_reduces_drawdown_in_crash():
     eq_p, _, _ = simulate(closes, days, alloc, {}, ["BTC"], [], 50, 50, 2)
     eq_h, _, _ = simulate(closes, days, alloc, {}, ["BTC"], [], 50, 50, 2, protect=False)
     assert eq_p[-1] > eq_h[-1]
+
+
+# ---------------------------------------------------------------- HA csúszkák
+def _set_sliders(ha, index, top3, meme):
+    ha.states.update({
+        "input_number.cryptobot_allocation_index": str(index),
+        "input_number.cryptobot_allocation_top3": str(top3),
+        "input_number.cryptobot_allocation_meme": str(meme),
+    })
+
+
+def test_sliders_override_config(env):
+    bot, ex, ha = make_bot(env, False, {"EUR": 6000.0})
+    _set_sliders(ha, 100, 0, 0)
+    bot.run_once()
+    bought = {s.split("/")[0] for s, side, *_ in ex.orders if side == "buy"}
+    assert "DOGE" not in bought  # meme rész 0%
+    assert ha.attrs["last_run"]["allocation_source"] == "home_assistant"
+    assert ha.attrs["last_run"]["allocation_pct"]["index"] == 100.0
+
+
+def test_partial_sliders_fall_back_to_config(env):
+    bot, ex, ha = make_bot(env, True, {"EUR": 6000.0})
+    ha.states["input_number.cryptobot_allocation_index"] = "80"
+    bot.run_once()
+    assert ha.attrs["last_run"]["allocation_source"] == "addon_config"
+
+
+def test_slider_change_triggers_rebalance(env):
+    bot, ex, ha = make_bot(env, True, {"EUR": 6000.0})
+    _set_sliders(ha, 52, 28, 21)
+    bot.run_once()
+    assert bot.run_once().startswith("Nincs teendő")
+    _set_sliders(ha, 70, 20, 10)
+    out = bot.run_once()
+    assert "arányváltozás: 70/20/10" in out
