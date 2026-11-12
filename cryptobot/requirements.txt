@@ -1,2 +1,2 @@
 ccxt==4.5.92
-requests>=2.32,<3
+requests>=2.34.2,<3
